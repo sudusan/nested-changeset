@@ -2,13 +2,13 @@
 AWSTemplateFormatVersion: 2010-09-09
 Transform:
   - 'AWS::Serverless-2016-10-31'
-Description: 'CICD Pipeline for Cirrus applications'
+Description: 'CICD Pipeline for all Cirrus applications'
 Parameters:
  git2s3bucket:
   Description: 'Select the bucket based on the region'
   Type: String
   AllowedValues:
-      - 'lambda-cicd-west-2'
+      - 'cirrus-cicd-prd-west'
  SourceObjectKey:
   Description: 'S3 source artifact'
   Type: String
@@ -47,7 +47,7 @@ Parameters:
  StageAccountId:
   Description: The AWS Account ID of the Stage account. Leave as default if EnvironmentClass is not "PROD"
   Type: String
-  Default: 200365596947
+  Default: 805262168568
  StageLambdaRole:
   Description: The AWS IAM Role of the Stage account's Lambda execution role. Leave as default if EnvironmentClass is not "PROD"
   Type: String
@@ -1334,8 +1334,8 @@ Resources:
             Capabilities: CAPABILITY_NAMED_IAM
             RoleArn: !GetAtt CodePipelineServiceRole.Arn
             ChangeSetName: !Ref ChangeSetName
-            TemplateConfiguration: SourceOutput::IAC/parameters-prd.json
-            TemplatePath: SourceOutput::IAC/application-stack.yml
+            TemplateConfiguration: SourceOutput::IAC/newspec-param-isen2.json
+            TemplatePath: SourceOutput::IAC/newspec.yml
           RunOrder: 4
         - Name: ApproveChangeSet
           ActionTypeId:

@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: A Template with nested stacks
+Parameters:
+  S3NestedTemplateBucket:
+    Type: String
+    Default: cs-prd-1-codepipelineartifactstorebucket-13g1co2ztlp2z
+  ApplicationName:
+    Type: String
+    Default: nested-app
+  EnvironmentClass:
+    Type: String
+    Default: DEV
+    AllowedValues:
+    - STG
+    - QA
+    - DEV
+    - PRD
+  AMIIdentifier:
+    Type: String
+  DBInstanceType:
+    Type: String
+    Default: db.m5.large
+  EC2InstanceType: 
+    Type: String
+    Default: t3.micro
+    AllowedValues: 
+      - t3.micro
+      - m5.large
+      - r5.large 
+  EC2KeyName: 
+    Type: String
+  EC2VPCSubNetIds:
+    Type: String
+  ALBVPCSubNetIds:
+    Type: String
+  DBSubNetIds:
+    Type: String
+  VPCId: 
+    Type: String
+  InternetAccessible:
+    Type: String
+    Default: internet-facing
+    AllowedValues: 
+      - internet-facing
+      - internal
+Resources:
+  ComputeFleet:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        ApplicationName: !Ref ApplicationName
+        EnvironmentClass: !Ref EnvironmentClass
+        AMIIdentifier: !Ref AMIIdentifier
+        ALBVPCSubNetIds: !Ref ALBVPCSubNetIds
+        EC2InstanceType: !Ref EC2InstanceType
+        EC2KeyName: !Ref EC2KeyName
+        EC2VPCSubNetIds: !Ref EC2VPCSubNetIds
+        VPCId: !Ref VPCId
+        InternetAccessible: !Ref InternetAccessible
+      Tags:
+        - Key: EnvironmentClass
+          Value: !Ref EnvironmentClass    
+        - Key: ApplicationName
+          Value: !Ref ApplicationName  
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3NestedTemplateBucket}/IAC/nested-template/compute.yml  
+  RelationalDataStore:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        ApplicationName: !Ref ApplicationName
+        EnvironmentClass: !Ref EnvironmentClass
+        EC2FleetSecurityGroup: !GetAtt ComputeFleet.Outputs.EC2SecurityGroup
+        VPCId: !Ref VPCId
+        DBSubNetIds: !Ref DBSubNetIds
+        DBInstanceType: !Ref DBInstanceType
+      Tags:
+        - Key: EnvironmentClass
+          Value: !Ref EnvironmentClass    
+        - Key: ApplicationName
+          Value: !Ref ApplicationName  
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3NestedTemplateBucket}/IAC/nested-template/rds.yml
