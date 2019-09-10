@@ -36,10 +36,7 @@ Parameters:
   Description: 'S3 source artifact'
   Type: String
   Default: sudusan/nested-changeset/sudusan_nested-changeset.zip
- NestedTemplateBucket:
-  Description: 'Name of the bucket which houses nested cloudformation templates'
-  Type: String
-  Default: myapp-cicd-nestedstack 
+  
  ChangeSetName:
   Description: 'Name of application'
   Type: String
@@ -140,10 +137,12 @@ Resources:
     Type: AWS::DynamoDB::Table
   
   LambdaZipsBucket:
+    Condition: STGEnvironment
     Type: 'AWS::S3::Bucket'
     Properties:
       Tags: []
   CopyZips:
+    Condition: STGEnvironment
     Type: 'AWS::CloudFormation::CustomResource'
     Properties:
       ServiceToken: !GetAtt 
@@ -158,6 +157,7 @@ Resources:
         - functions/packages/GitPullS3/lambda.zip
         - functions/packages/ZipDl/lambda.zip
   CopyZipsRole:
+    Condition: STGEnvironment
     Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
@@ -187,6 +187,7 @@ Resources:
                 Resource:
                   - !Sub 'arn:aws:s3:::${LambdaZipsBucket}/${QSS3KeyPrefix}*'
   CopyZipsFunction:
+    Condition: STGEnvironment
     Type: 'AWS::Lambda::Function'
     Properties:
       Description: Copies objects from a source S3 bucket to a destination
@@ -253,6 +254,7 @@ Resources:
             - '        cfnresponse.send(event, context, status, {}, None)'
             - ''
   KeyBucket:
+    Condition: STGEnvironment
     Type: 'AWS::S3::Bucket'
     Properties:
       Tags: []
@@ -267,6 +269,7 @@ Resources:
         Status: Enabled
       Tags: []
   KMSKey:
+    Condition: STGEnvironment
     Type: 'AWS::KMS::Key'
     Properties:
       Description: >-
@@ -332,6 +335,7 @@ Resources:
               Bool:
                 'kms:GrantIsForAWSResource': true
   CreateSSHKeyRole:
+    Condition: STGEnvironment
     Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
@@ -380,6 +384,7 @@ Resources:
                 Resource:
                   - 'arn:aws:logs:*:*:*'
   CreateSSHKeyLambda:
+    Condition: STGEnvironment
     DependsOn: CopyZips
     Type: 'AWS::Lambda::Function'
     Properties:
@@ -394,6 +399,7 @@ Resources:
         S3Bucket: !Ref LambdaZipsBucket
         S3Key: !Sub '${QSS3KeyPrefix}functions/packages/CreateSSHKey/lambda.zip'
   CreateSSHKey:
+    Condition: STGEnvironment
     Type: 'AWS::CloudFormation::CustomResource'
     Version: '1.0'
     Properties:
@@ -405,6 +411,7 @@ Resources:
       KMSKey: !Ref KMSKey
   
   DeleteBucketContentsRole:
+    Condition: STGEnvironment
     Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
@@ -451,6 +458,7 @@ Resources:
                   - 'arn:aws:logs:*:*:*'
   
   DeleteBucketContentsLambda:
+    Condition: STGEnvironment
     DependsOn: CopyZips
     Type: 'AWS::Lambda::Function'
     Properties:
@@ -466,6 +474,7 @@ Resources:
         S3Key: !Sub '${QSS3KeyPrefix}functions/packages/DeleteBucketContents/lambda.zip'
   
   DeleteBucketContents:
+    Condition: STGEnvironment
     Type: 'AWS::CloudFormation::CustomResource'
     Version: '1.0'
     DependsOn:
@@ -479,6 +488,7 @@ Resources:
       OutputBucket: !Ref OutputBucket
   
   GitPullRole:
+    Condition: STGEnvironment
     Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
@@ -532,16 +542,17 @@ Resources:
                   - 'arn:aws:logs:*:*:*'
   
   GitPullLambda:
+    Condition: STGEnvironment
     DependsOn: CopyZips
     Type: 'AWS::Lambda::Function'
     Properties:
       Handler: lambda_function.lambda_handler
-      MemorySize: '128'
+      MemorySize: 128
       Role: !GetAtt 
         - GitPullRole
         - Arn
       Runtime: python2.7
-      Timeout: '300'
+      Timeout: 300
       Environment:
         Variables:
           ExcludeGit: 'True'
@@ -550,6 +561,7 @@ Resources:
         S3Key: !Sub '${QSS3KeyPrefix}functions/packages/GitPullS3/lambda.zip'
   
   WebHookRole:
+    Condition: STGEnvironment
     Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
