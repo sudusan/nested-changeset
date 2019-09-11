@@ -36,7 +36,10 @@ Parameters:
   Description: 'S3 source artifact'
   Type: String
   Default: sudusan/nested-changeset/sudusan_nested-changeset.zip
-  
+ SourceObjectKeyForProd:
+  Description: 'S3 source artificat for production'
+  Type: String
+  Default: master/bundle.zip
  ChangeSetName:
   Description: 'Name of application'
   Type: String
@@ -109,6 +112,7 @@ Parameters:
     Type: String
   
 Conditions:
+  
   ProdS3Bucket: !Equals [ !Ref EnvironmentClass , PRD]
   NonProdS3Bucket: !Not [!Equals [ !Ref EnvironmentClass , PRD]]
   STGEnvironment: !Equals [ !Ref EnvironmentClass, STG]
@@ -897,6 +901,54 @@ Resources:
       Topics:
       - !Ref pipelinesevent  
 
+  ChangeSetDetailsFunction:
+    Type: AWS::Lambda::Function
+    Condition: NotSTGEnvironment
+    Properties:
+      Description:  to get details of a changeset
+      Handler: index.handler
+      Role: !GetAtt LambdaServiceRole.Arn
+      Runtime: python3.7
+      Tags:
+        - Key: ApplicationName
+          Value: !Ref ApplicationName
+        - Key: EnvironmentClass
+          Value: !Ref EnvironmentClass
+      Timeout: 300
+      Environment:
+        Variables:
+          CHANGESET_NAME: !Ref 'ChangeSetName'
+          STACK_NAME: !Join [ '-', [ !Ref ApplicationName, !Ref EnvironmentClass, 'Stack' ] ] 
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          import logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+            logger.info('Loading function')
+            cfnClient = boto3.client('cloudformation')
+            def lambda_handler(event, context):
+              logger.info('Received event: ' + json.dumps(event, indent=2))
+              # Get stack-name from the event
+              stack_name = os.environ['STACK_NAME']
+              changeset_name = os.environ['CHANGESET_NAME']
+              logger.info('Stack Name is: ' + stack_name)
+              logger.info('Changeset Name is: ' + changeset_name)
+
+              try:
+              # Call Describe Change Set
+                response = cfnClient.describe_change_set(ChangeSetName=changeset_name, StackName=stack_name)
+                # Log response from AWS CloudFormation
+                logger.info("Response: " + json.dumps(response, indent=2))
+                # Return the success message
+                return 'Success'
+              except Exception as e:
+                logger.error(e)
+                return str(e)
+
   # Deployment Approval Requester lambda function
   ApprovalRequesterFunction:
     Type: AWS::Lambda::Function
@@ -1415,25 +1467,9 @@ Resources:
             - Name: SourceOutput
           Configuration:
             S3Bucket: !Ref CodePipelineArtifactStoreBucket
-            S3ObjectKey: !Ref SourceObjectKey
+            S3ObjectKey: !Ref SourceObjectKeyForProd
             PollForSourceChanges: true
           RunOrder: 1
-      -
-        Name: Build
-        Actions:
-        -
-          Name: CodeBuildIAC
-          InputArtifacts:
-            - Name: SourceOutput   
-          ActionTypeId:
-            Category: Build
-            Owner: AWS
-            Version: "1"
-            Provider: CodeBuild
-          Configuration:
-            ProjectName: !Ref CodeBuildPreDeployTest
-            PrimarySource: SourceOutput
-          RunOrder: 2
       -
         Name: Approval
         Actions:
@@ -1449,7 +1485,7 @@ Resources:
               - CreateNewSNSTopic
               - !Ref CodePipelineSNSTopic
               - !Ref NotificationsSNSTopic
-          RunOrder: 3
+          RunOrder: 2
       -
         Name: ChangeSet
         Actions:
@@ -1470,6 +1506,18 @@ Resources:
             ChangeSetName: !Ref ChangeSetName
             TemplateConfiguration: SourceOutput::IAC/newspec-param-isen2.json
             TemplatePath: SourceOutput::IAC/newspec.yml
+          RunOrder: 3
+        - Name: ChangesetDetails
+          ActionTypeId:
+            Category: Invoke
+            Owner: AWS
+            Version: '1'
+            Provider: Lambda
+          OutputArtifacts:
+            - Name: SourceOutput2
+          Configuration:
+            FunctionName: !GetAtt 'ChangeSetDetailsFunction.Arn'
+            UserParameters: !Join [ '-', [ !Ref ApplicationName, !Ref EnvironmentClass, 'Stack' ] ]
           RunOrder: 4
         - Name: ApproveChangeSet
           ActionTypeId:
@@ -1480,7 +1528,7 @@ Resources:
           Configuration:
             NotificationArn: !Ref ChangeSetApprovalSNSTopic
             CustomData: !Sub 'A new change set was created for the ${AWS::StackName} stack. Do you want to implement the changes?'
-          RunOrder: '5'
+          RunOrder: 5
         - Name: ExecuteChangeSet
           ActionTypeId:
             Category: Deploy
@@ -1492,23 +1540,7 @@ Resources:
             ChangeSetName: !Ref ChangeSetName
             RoleArn: !GetAtt CodePipelineServiceRole.Arn
             StackName: !Join [ '-', [ !Ref ApplicationName, !Ref EnvironmentClass, 'Stack' ] ]
-          RunOrder: '6'
-
-      -
-        Name: Test
-        Actions:
-        -
-          Name: CodeBuild
-          InputArtifacts:
-            - Name: SourceOutput  
-          ActionTypeId:
-            Category: Build
-            Owner: AWS
-            Version: "1"
-            Provider: CodeBuild
-          Configuration:
-            ProjectName: !Ref CodeBuildPostDeployTest
-          RunOrder: 7
+          RunOrder: 6
       ArtifactStore:
         Type: S3
         Location: !Ref CodePipelineArtifactStoreBucket
@@ -1538,21 +1570,6 @@ Resources:
             PollForSourceChanges: true
           RunOrder: 1
       -
-        Name: Build
-        Actions:
-        -
-          Name: CodeBuildIAC
-          InputArtifacts:
-            - Name: SourceOutput   
-          ActionTypeId:
-            Category: Build
-            Owner: AWS
-            Version: "1"
-            Provider: CodeBuild
-          Configuration:
-            ProjectName: !Ref CodeBuildPreDeployTest
-          RunOrder: 2
-      -
         Name: Deploy
         Actions:
         -
@@ -1571,22 +1588,7 @@ Resources:
             RoleArn: !GetAtt CodePipelineServiceRole.Arn
             TemplateConfiguration: SourceOutput::IAC/newspec-param-isen1.json
             TemplatePath: SourceOutput::IAC/newspec.yml
-          RunOrder: 3
-      -
-        Name: Test
-        Actions:
-        -
-          Name: CodeBuild
-          InputArtifacts:
-            - Name: SourceOutput  
-          ActionTypeId:
-            Category: Build
-            Owner: AWS
-            Version: "1"
-            Provider: CodeBuild
-          Configuration:
-            ProjectName: !Ref CodeBuildPostDeployTest
-          RunOrder: 4
+          RunOrder: 2
       -
         Name: TriggerProdDeployment
         Actions:
@@ -1601,7 +1603,8 @@ Resources:
             Provider: Lambda
           Configuration:
             FunctionName: !Ref UploadArtifactToProd
-            UserParameters: !Ref ProdBucketName          
+            UserParameters: !Ref ProdBucketName
+          RunOrder: 3          
       ArtifactStore:
         Type: S3
         Location: !Ref CodePipelineArtifactStoreBucket
