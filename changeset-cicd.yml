@@ -1516,7 +1516,7 @@ Resources:
           OutputArtifacts:
             - Name: SourceOutput2
           Configuration:
-            FunctionName: !GetAtt 'ChangeSetDetailsFunction.Arn'
+            FunctionName: ChangeSetDetailsFunction
             UserParameters: !Join [ '-', [ !Ref ApplicationName, !Ref EnvironmentClass, 'Stack' ] ]
           RunOrder: 4
         - Name: ApproveChangeSet
