@@ -1503,7 +1503,7 @@ Resources:
             TemplateConfiguration: SourceOutput::IAC/newspec-param-isen2.json
             TemplatePath: SourceOutput::IAC/newspec.yml
           RunOrder: 2
-        - Name: ApproveChangeset
+        - Name: Approval
           ActionTypeId:
             Category: Approval
             Owner: AWS
