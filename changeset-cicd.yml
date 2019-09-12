@@ -1467,8 +1467,7 @@ Resources:
       RoleArn:
         !GetAtt CodePipelineServiceRole.Arn
       Stages:
-      -
-        Name: Source
+      - Name: Source
         Actions:
         -
           Name: SourceAction
@@ -1503,7 +1502,9 @@ Resources:
             TemplateConfiguration: SourceOutput::IAC/newspec-param-isen2.json
             TemplatePath: SourceOutput::IAC/newspec.yml
           RunOrder: 2
-        - Name: Approval
+      - Name: Approval
+        Actions:
+        - Name: ApproveChangeSet
           ActionTypeId:
             Category: Approval
             Owner: AWS
@@ -1515,6 +1516,8 @@ Resources:
               - !Ref CodePipelineSNSTopic
               - !Ref NotificationsSNSTopic
           RunOrder: 3
+      - Name: Execute
+        Actions:
         - Name: ExecuteChangeSet
           ActionTypeId:
             Category: Deploy
