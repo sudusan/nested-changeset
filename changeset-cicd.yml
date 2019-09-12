@@ -48,11 +48,6 @@ Parameters:
   Description: 'Name of application'
   Type: String
   Default: myapp
- SNSEmail:
-  Description: 'approver email id'
-  Type: String
-  Default: 'sudhakar.sankaran@autodesk.com'
-
  EnvironmentClass:
   Description: 'Environment being deployed into'
   Type: String
@@ -905,7 +900,7 @@ Resources:
     Condition: NotSTGEnvironment
     Properties:
       Description:  to get details of a changeset
-      Handler: lambda_handler.handler
+      Handler: index.lambda_handler
       Role: !GetAtt LambdaServiceRole.Arn
       Runtime: python3.7
       Tags:
@@ -926,27 +921,28 @@ Resources:
           import logging
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
-
-            logger.info('Loading function')
-            cfnClient = boto3.client('cloudformation')
-            def lambda_handler(event, context):
-              logger.info('Received event: ' + json.dumps(event, indent=2))
-              # Get stack-name from the event
-              stack_name = os.environ['STACK_NAME']
-              changeset_name = os.environ['CHANGESET_NAME']
-              logger.info('Stack Name is: ' + stack_name)
-              logger.info('Changeset Name is: ' + changeset_name)
-
-              try:
+          cfnClient = boto3.client('cloudformation')
+          def lambda_handler(event, context):
+          # Get stack-name from the event
+            codepipeline = boto3.client('codepipeline')
+            stack_name = os.environ['STACK_NAME']
+            changeset_name = os.environ['CHANGESET_NAME']
+            print(stack_name)
+            print(changeset_name)
+            try:
               # Call Describe Change Set
-                response = cfnClient.describe_change_set(ChangeSetName=changeset_name, StackName=stack_name)
-                # Log response from AWS CloudFormation
-                logger.info("Response: " + json.dumps(response, indent=2))
-                # Return the success message
-                return 'Success'
-              except Exception as e:
-                logger.error(e)
-                return str(e)
+              response = cfnClient.describe_change_set(ChangeSetName=changeset_name, StackName=stack_name)
+              # Log response from AWS CloudFormation
+              changes = response['Changes']
+              changestring = str(changes)
+              newstr = changestring.replace("'", '"')
+              csjson = '{"Changes":' + newstr + '}'
+              print(csjson)
+              # Return the success message
+              return codepipeline.put_job_success_result(jobId=event["CodePipeline.job"]["id"], currentRevision={'revision':'1', 'changeIdentifier':'1'})
+            except Exception as e:
+              logger.error(e)
+              return codepipeline.put_job_failure_result(jobId=event["CodePipeline.job"]["id"], failureDetails={'type':'JobFailed','message':'This code failed to complete successfully'})
 
   # Deployment Approval Requester lambda function
   ApprovalRequesterFunction:
@@ -966,6 +962,7 @@ Resources:
       Environment:
         Variables:
           SLACK_WEBHOOK_URL: !Ref 'SlackWebhookUrl'
+          CHANGESET_NAME: !Ref 'ChangeSetName'
           SLACK_CHANNEL: !Ref 'SlackChannel'
           STACK_NAME: !Join [ '-', [ !Ref ApplicationName, !Ref EnvironmentClass, 'Stack' ] ]
       #VpcConfig: #Specify for uploading within specific VPCs
@@ -975,14 +972,29 @@ Resources:
           import json
           import logging
           import time
+          import boto3
           from urllib.request import Request, urlopen
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
+          def get_changeset_details(stack_name, changeset_name):
+            cfnClient = boto3.client('cloudformation')
+            try:
+              response = cfnClient.describe_change_set(ChangeSetName=changeset_name, StackName=stack_name)
+              changes = response['Changes']
+              changestring = str(changes)
+              newstr = changestring.replace("'", '"')
+              csjson = '{"Changes":' + newstr + '}'
+              print(csjson)
+              return csjson
+            except Exception as e:
+              logger.error(e)
+              return 'failure'
           def handler(event, context):
           # encrypted parameter in Parameter Store.
               SLACK_WEBHOOK_URL = os.environ['SLACK_WEBHOOK_URL']
               SLACK_CHANNEL = os.environ['SLACK_CHANNEL']
               STACK_NAME = os.environ['STACK_NAME']
+              CHANGESET_NAME = os.environ['CHANGESET_NAME']
               logger.info("Event: " + str(event))
               message = json.loads(event['Records'][0]['Sns']['Message'])
               logger.info("Message: " + str(message))
@@ -990,10 +1002,13 @@ Resources:
                   data = json.loads(json.dumps(message))
                   token = data["approval"]["token"]
                   codepipeline_name = data["approval"]["pipelineName"]
+                  changeset_json = get_changeset_details(STACK_NAME,CHANGESET_NAME)
+                  text_line1 = "Your stack `"+STACK_NAME+"` has the following changes:\n"
+                  text_string = text_line1 + changeset_json
                   # format of slack message
                   slack_message = {
                       "channel": SLACK_CHANNEL,
-                      "text": "Ready to push your stack `"+STACK_NAME+"` to production?",
+                      "text": text_string,
                       "attachments": [
                           {
                               "text": "_Yes to promote and deploy your build_",
@@ -1469,32 +1484,14 @@ Resources:
             S3ObjectKey: !Ref SourceObjectKeyForProd
             PollForSourceChanges: true
           RunOrder: 1
-      -
-        Name: Approval
+      - Name: ChangeSet
         Actions:
-        - 
-          Name: ApproveOrDeny
-          ActionTypeId:
-            Category: Approval
-            Owner: AWS
-            Provider: Manual
-            Version: '1'
-          Configuration:
-            NotificationArn: !If
-              - CreateNewSNSTopic
-              - !Ref CodePipelineSNSTopic
-              - !Ref NotificationsSNSTopic
-          RunOrder: 2
-      -
-        Name: ChangeSet
-        Actions:
-        -
-          Name: CreateChangeSet
+        - Name: CreateChangeSet
           ActionTypeId:
             Category: Deploy
             Owner: AWS
             Provider: CloudFormation
-            Version: '1'
+            Version: "1"
           InputArtifacts:
             - Name: SourceOutput
           Configuration:
@@ -1505,29 +1502,19 @@ Resources:
             ChangeSetName: !Ref ChangeSetName
             TemplateConfiguration: SourceOutput::IAC/newspec-param-isen2.json
             TemplatePath: SourceOutput::IAC/newspec.yml
-          RunOrder: 3
-        - Name: ViewChangeset
-          ActionTypeId:
-            Category: Invoke
-            Owner: AWS
-            Version: '1'
-            Provider: Lambda
-          OutputArtifacts:
-            - Name: SourceOutput2
-          Configuration:
-            FunctionName: !Ref ChangeSetDetailsFunction
-            UserParameters: !Join [ '-', [ !Ref ApplicationName, !Ref EnvironmentClass, 'Stack' ] ]
-          RunOrder: 4
-        - Name: ApproveChangeSet
+          RunOrder: 2
+        - Name: ApproveChangeset
           ActionTypeId:
             Category: Approval
             Owner: AWS
-            Provider: Manual
             Version: '1'
+            Provider: Manual
           Configuration:
-            NotificationArn: !Ref ChangeSetApprovalSNSTopic
-            CustomData: !Sub 'A new change set was created for the ${AWS::StackName} stack. Do you want to implement the changes?'
-          RunOrder: 5
+            NotificationArn: !If
+              - CreateNewSNSTopic
+              - !Ref CodePipelineSNSTopic
+              - !Ref NotificationsSNSTopic
+          RunOrder: 3
         - Name: ExecuteChangeSet
           ActionTypeId:
             Category: Deploy
@@ -1539,7 +1526,7 @@ Resources:
             ChangeSetName: !Ref ChangeSetName
             RoleArn: !GetAtt CodePipelineServiceRole.Arn
             StackName: !Join [ '-', [ !Ref ApplicationName, !Ref EnvironmentClass, 'Stack' ] ]
-          RunOrder: 6
+          RunOrder: 4
       ArtifactStore:
         Type: S3
         Location: !Ref CodePipelineArtifactStoreBucket
