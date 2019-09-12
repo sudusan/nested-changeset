@@ -1504,7 +1504,7 @@ Resources:
           RunOrder: 2
       - Name: Approval
         Actions:
-        - Name: ApproveChangeSet
+        - Name: ApproveOrDeny
           ActionTypeId:
             Category: Approval
             Owner: AWS
