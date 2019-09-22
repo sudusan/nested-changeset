@@ -5,7 +5,7 @@
         "VpcId": "vpc-bf1785c5",
         "EC2SubnetA": "subnet-1c317340",
         "EC2SubnetB": "subnet-340c4d53",
-        "EC2InstanceType": "t2.micro",
+        "EC2InstanceType": "t2.large",
         "EC2HostName": "myapphost",
         "EC2NodeCount": "1",
         "AMI": "ami-0b69ea66ff7391e80",
