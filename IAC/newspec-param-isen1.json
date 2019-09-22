@@ -1,7 +1,7 @@
 {
     "Parameters": {
-        "Application": "delwiki-stg",
-        "Environment": "STG",
+        "Application": "delwiki-dev",
+        "Environment": "DEV",
         "VpcId": "vpc-bf1785c5",
         "EC2SubnetA": "subnet-1c317340",
         "EC2SubnetB": "subnet-340c4d53",
